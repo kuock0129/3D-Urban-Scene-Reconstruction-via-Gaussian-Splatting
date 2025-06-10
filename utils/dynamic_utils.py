@@ -152,7 +152,7 @@ def create_unicycle_model(train_cams, model_path, opt_iter=0, data_type='kitti')
             all_centers[track_id].append(b2w[[0, 2], 3])
             all_heights[track_id].append(b2w[1, 3])
             eulers = rot2Euler(b2w[:3, :3])
-            all_phis[track_id].append(eulers[1])
+            all_phis[track_id].append(eulers[1]) # TODO
             all_timestamps[track_id].append(t)
 
     for track_id in all_centers.keys():
@@ -193,4 +193,4 @@ def create_unicycle_model(train_cams, model_path, opt_iter=0, data_type='kitti')
                         )
                         # gt_centers=gt_centers)
 
-    return unicycle_models
+    return unicycle_models #have already trained

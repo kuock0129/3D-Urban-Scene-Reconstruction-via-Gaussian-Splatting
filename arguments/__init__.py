@@ -12,7 +12,7 @@
 from argparse import ArgumentParser, Namespace
 import sys
 import os
-
+import time
 class GroupParams:
     pass
 
@@ -47,9 +47,8 @@ class ParamGroup:
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
-        self._source_path = ""
-        self._model_path = ""
-        self._images = "images"
+        self._source_path = "/home/shuo/research/reproduce/hugs/data/waymo/source_data"
+        self._model_path = "/home/shuo/research/reproduce/hugs/data/waymo"
         self._resolution = -1
         self._white_background = False
         self.data_device = "cpu"
