@@ -9,6 +9,7 @@ from random import randint
 # from torch.utils.tensorboard import SummaryWriter
 from argparse import ArgumentParser
 import numpy as np
+import gc
 import uuid
 from scene import Scene, GaussianModel
 from gaussian_renderer import render
@@ -54,6 +55,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
+        
+        
 
         # Pick a random Camera
         rand_idx = randint(0, len(viewpoint_indices) - 1)
@@ -113,6 +116,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
 
+            if iteration % 100 == 0:  # Every 100 iterations
+                gc.collect()
+                torch.cuda.empty_cache()
+
             # Densification
             # if iteration < opt.densify_until_iter:
             #     # Keep track of max radii in image-space for pruning
@@ -143,6 +150,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+
+                    # Clear cache after densification
+                    gc.collect()
+                    torch.cuda.empty_cache()
                     
                 if iteration % opt.opacity_reset_interval == 0 or (
                     dataset.white_background and iteration == opt.densify_from_iter):
@@ -207,6 +218,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
     # Report test and train stats
     if iteration in testing_iterations:
+        del loss, loss_rgb, Ll1, image, gt_image, render_pkg, viewspace_point_tensor, visibility_filter, radii
+        gc.collect()
         torch.cuda.empty_cache()
         validation_configs = ({'name': 'test', 'cameras': scene.getTestCameras()}, 
                             {'name': 'train', 'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] 
@@ -239,6 +252,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
+        del render_pkg, image, gt_image
+        gc.collect()
         torch.cuda.empty_cache()
 
 
