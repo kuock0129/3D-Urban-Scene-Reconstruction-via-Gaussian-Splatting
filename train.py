@@ -122,6 +122,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
 
+            # ADD GPU CACHE CLEARING HERE
+            if iteration % 100 == 0:  # Every 100 iterations
+                gc.collect()
+                torch.cuda.empty_cache()
+
 
 
             # Optimizer step
@@ -160,6 +165,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                     # for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
                     #     dynamic_gaussian.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+
+                    # Clear cache after densification
+                    gc.collect()
+                    torch.cuda.empty_cache()
 
                 
                 if iteration % opt.opacity_reset_interval == 0 or \
@@ -206,6 +215,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                               scene.model_path + f"/ckpts/unicycle_{iid}_chkpnt{iteration}.pth")
 
         torch.cuda.empty_cache()
+
 def prepare_output_and_logger(args):
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -237,8 +247,6 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
     # Report test and train stats
     if iteration in testing_iterations:
-        del loss, loss_rgb, Ll1, image, gt_image, render_pkg, viewspace_point_tensor, visibility_filter, radii
-        gc.collect()
         torch.cuda.empty_cache()
         validation_configs = ({'name': 'test', 'cameras': scene.getTestCameras()}, 
                             {'name': 'train', 'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] 
@@ -271,8 +279,6 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
-        del render_pkg, image, gt_image
-        gc.collect()
         torch.cuda.empty_cache()
 
 
