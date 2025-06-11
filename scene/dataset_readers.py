@@ -253,12 +253,12 @@ def readStudioInfo(path, white_background, eval, data_type, ignore_dynamic):
     except Exception as e:
         print('When loading point clound, meet error:', e)
         exit(0)
-    if len(pcd[0]) > 150000:
-        indices = np.random.choice(len(pcd[0]), 150000, replace=False)
-        points = pcd[0][indices]
-        colors = pcd[1][indices]
-        normals = pcd[2][indices]
-        pcd = BasicPointCloud(points=points, colors=colors, normals=normals)
+    # if len(pcd[0]) > 1000:
+    #     indices = np.random.choice(len(pcd[0]), 1000, replace=False)
+    #     points = pcd[0][indices]
+    #     colors = pcd[1][indices]
+    #     normals = pcd[2][indices]
+    #     pcd = BasicPointCloud(points=points, colors=colors, normals=normals)
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,

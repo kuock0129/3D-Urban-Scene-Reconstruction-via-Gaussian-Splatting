@@ -102,9 +102,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         iter_end.record()
 
-        static_mask = viewpoint_cam.mask.flatten()
-        # visibility_filter_static = visibility_filter[static_mask]
-        # visibility_filter_static = viewspace_point_tensor[~static_mask]
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
@@ -122,13 +119,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
 
-            # ADD GPU CACHE CLEARING HERE
-            if iteration % 100 == 0:  # Every 100 iterations
-                gc.collect()
-                torch.cuda.empty_cache()
-
-
-
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
@@ -138,14 +128,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     dynamic_gaussian.optimizer.step()
                     dynamic_gaussian.optimizer.zero_grad(set_to_none = True)
 
-
             # Densification
             if iteration < opt.densify_until_iter:
 
                 # gsplat
                 grad = viewspace_point_tensor.grad.clone()
-                grad[..., 0] *= viewpoint_cam.image_width / 2.0
-                grad[..., 1] *= viewpoint_cam.image_height / 2.0
+                # grad[..., 0] *= viewpoint_cam.image_width / 2.0
+                # grad[..., 1] *= viewpoint_cam.image_height / 2.0
                 # Keep track of max radii in image-space for pruning
                 current_index = gaussians.get_xyz.shape[0]
                 gaussians.max_radii2D[visibility_filter[:current_index]] = torch.max(gaussians.max_radii2D[visibility_filter[:current_index]], radii[:current_index][visibility_filter[:current_index]])
@@ -162,42 +151,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    print(f"Densifying with {gaussians.get_xyz.shape[0]} points")
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                     # for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
                     #     dynamic_gaussian.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-
-                    # Clear cache after densification
-                    gc.collect()
-                    torch.cuda.empty_cache()
-
                 
                 if iteration % opt.opacity_reset_interval == 0 or \
                     (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
                     # for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
                     #     dynamic_gaussian.reset_opacity()
-
-            # Densification
-            # if iteration < opt.densify_until_iter:
-            #     # Keep track of max radii in image-space for pruning
-            #     gaussians.max_radii2D[visibility_filter[static_mask]] = torch.max(
-            #         gaussians.max_radii2D[visibility_filter[static_mask]], radii[visibility_filter[static_mask]])
-            #     scene.dynamic_gaussians.max_radii2D[visibility_filter[~static_mask]] = torch.max(
-            #         scene.dynamic_gaussians.max_radii2D[visibility_filter[~static_mask]], radii[visibility_filter[~static_mask]])
-            #     gaussians.add_densification_stats(viewspace_point_tensor[static_mask], visibility_filter[static_mask])
-            #     scene.dynamic_gaussians.add_densification_stats(viewspace_point_tensor[~static_mask], visibility_filter[~static_mask])
-
-            #     if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-            #         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-            #         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-            #         scene.dynamic_gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-
-            #     if iteration % opt.opacity_reset_interval == 0 or (
-            #         dataset.white_background and iteration == opt.densify_from_iter):
-            #         gaussians.reset_opacity()
-            #         scene.dynamic_gaussians.reset_opacity()
-
-                
 
             if iteration in checkpoint_iterations:
                 print(f"\n[ITER {iteration}] Saving Checkpoint")
@@ -213,8 +176,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 for iid, unicycle_pkg in scene.unicycles.items():
                     torch.save(unicycle_pkg['model'].capture(), 
                               scene.model_path + f"/ckpts/unicycle_{iid}_chkpnt{iteration}.pth")
-
-        torch.cuda.empty_cache()
 
 def prepare_output_and_logger(args):
     if not args.model_path:
