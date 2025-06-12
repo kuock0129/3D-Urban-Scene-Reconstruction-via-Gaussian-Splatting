@@ -5,14 +5,17 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 import random
-from torch.utils.tensorboard import SummaryWriter
+from random import randint
+# from torch.utils.tensorboard import SummaryWriter
 from argparse import ArgumentParser
 import numpy as np
-
+import gc
+import uuid
 from scene import Scene, GaussianModel
 from gaussian_renderer import render
 from utils.loss_utils import l1_loss, ssim_loss
 from utils.image_utils import psnr
+from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams, get_combined_args
 from utils.general_utils import safe_state
 import lpipsPyTorch
@@ -39,7 +42,7 @@ repeat=1 # No repeats needed for this use case
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, 
-             checkpoint, debug_from, data_type="kitti360", affine=False):
+             data_type="kitti360", affine=False):
     
     # Initialize Gaussian models
     first_iter = 0
@@ -47,36 +50,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     # Create Gaussian models
     gaussians = GaussianModel(dataset.sh_degree, affine=affine)
-    scene = Scene(dataset, gaussians, data_type=data_type)
+    scene = Scene(dataset, gaussians, data_type="waymo", ignore_dynamic=False)
+
     gaussians.training_setup(opt)
+    for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
+        dynamic_gaussian.training_setup(opt)
     
     # Initialize background color
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     
-    # Load checkpoint if provided
-    if checkpoint:
-        (model_params, first_iter) = torch.load(checkpoint)
-        gaussians.restore(model_params, opt)
-        
-        # Load dynamic Gaussians
-        for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
-            dynamic_checkpoint = checkpoint.replace("chkpnt", f"dynamic_{iid}_chkpnt")
-            if os.path.exists(dynamic_checkpoint):
-                (dynamic_params, _) = torch.load(dynamic_checkpoint)
-                dynamic_gaussian.restore(dynamic_params, opt)
-        
-        # Load unicycle models
-        for iid, unicycle_pkg in scene.unicycles.items():
-            unicycle_checkpoint = checkpoint.replace("chkpnt", f"unicycle_{iid}_chkpnt")
-            if os.path.exists(unicycle_checkpoint):
-                unicycle_params = torch.load(unicycle_checkpoint)
-                unicycle_pkg['model'].restore(unicycle_params)
 
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
 
-    viewpoint_stack = None
+    viewpoint_stack = scene.getTrainCameras().copy()
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -96,15 +84,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Update learning rate
         gaussians.update_learning_rate(iteration)
-        
+        for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
+            dynamic_gaussian.update_learning_rate(iteration)
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
         # Pick a random Camera
-        if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+        rand_idx = randint(0, len(viewpoint_stack) - 1)
+        viewpoint_cam = viewpoint_stack[rand_idx]
         
         # Get previous camera for optical flow if available
         train_cameras = scene.getTrainCameras()
@@ -118,13 +106,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Render
         with record_function("forward_pass"):
             render_pkg = render(viewpoint_cam, prev_cam, gaussians, scene.dynamic_gaussians, 
-                            scene.unicycles, pipe, background, render_optical=(prev_cam is not None))
+                            scene.unicycles, pipe, background)
             
-            image, feats, depth, opticalflow, viewspace_point_tensor, visibility_filter, radii = (
-                render_pkg["render"], render_pkg["feats"], render_pkg["depth"], 
-                render_pkg["opticalflow"], render_pkg["viewspace_points"], 
+            image, depth, viewspace_point_tensor, visibility_filter, radii = (
+                render_pkg["render"],  render_pkg["depth"], 
+                render_pkg["viewspace_points"], 
                 render_pkg["visibility_filter"], render_pkg["radii"]
             )
+        
+        viewspace_point_tensor.retain_grad()
 
         # Loss computation
         with record_function("loss_calculation"):
@@ -134,27 +124,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             Ll1 = l1_loss(image, gt_image)
             loss_rgb = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_loss(image, gt_image))
         
-        # Semantic Loss
-        loss_semantic = 0.0
-        if viewpoint_cam.semantic2d is not None and iteration > 500:
-            gt_semantic = viewpoint_cam.semantic2d.cuda()
-            semantic_probs = F.softmax(feats, dim=0)
-            loss_semantic = F.cross_entropy(feats.unsqueeze(0), gt_semantic) * 0.1
-        
-        # Optical Flow Loss
-        loss_optical = 0.0
-        if prev_cam is not None and viewpoint_cam.optical_gt is not None and iteration > 2000:
-            gt_optical = viewpoint_cam.optical_gt.cuda()
-            loss_optical = F.mse_loss(opticalflow[:2], gt_optical.permute(2, 0, 1)[:2]) * 0.01
-        
-        # Dynamic regularization loss
-        loss_dynamic_reg = 0.0
-        for track_id, unicycle_pkg in scene.unicycles.items():
-            loss_dynamic_reg += unicycle_pkg['model'].reg_loss() * 0.001
-            loss_dynamic_reg += unicycle_pkg['model'].pos_loss() * 0.01
-        
-        # Total loss
-        loss = loss_rgb + loss_semantic + loss_optical + loss_dynamic_reg
+            # Total loss
+            loss = loss_rgb
+            reg_loss = 0
+            if opt.uc_opt_pos and (len(scene.unicycles) > 0) and (1000 < iteration) and (iteration < 15000):
+                for track_id, unicycle_pkg in scene.unicycles.items():
+                    model = unicycle_pkg['model']
+                    reg_loss += 1e-3 * model.reg_loss() + 1e-4 * model.pos_loss()
+                reg_loss = reg_loss / len(scene.unicycles)
+                loss += reg_loss
 
         with record_function("backward_pass"):
             loss.backward()
@@ -178,53 +156,77 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print(f"\n[ITER {iteration}] Saving Gaussians")
                 scene.save(iteration)
 
+            # Optimizer step
+            with record_function("optimizer_step"):
+                if iteration < opt.iterations:
+                    gaussians.optimizer.step()
+                    gaussians.optimizer.zero_grad(set_to_none = True)
+
+                    for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
+                        dynamic_gaussian.optimizer.step()
+                        dynamic_gaussian.optimizer.zero_grad(set_to_none = True)
+
+                    if dataset.unicycle and opt.uc_opt_pos and iteration > 1000:
+                        for track_id, unicycle_pkg in scene.unicycles.items():
+                            unicycle_optimizer = unicycle_pkg['optimizer']
+                            unicycle_optimizer.step()
+                            unicycle_optimizer.zero_grad(set_to_none = True)
+                    
             # Densification
             if iteration < opt.densify_until_iter:
                 with record_function("densification"):
-                # Keep track of max radii in image-space for pruning
-                    gaussians.max_radii2D[visibility_filter] = torch.max(
-                        gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+                    # gsplat
+                    grad = viewspace_point_tensor.grad.clone()
+                    # grad[..., 0] *= viewpoint_cam.image_width / 2.0
+                    # grad[..., 1] *= viewpoint_cam.image_height / 2.0
+                    # Keep track of max radii in image-space for pruning
+                    current_index = gaussians.get_xyz.shape[0]
+                    gaussians.max_radii2D[visibility_filter[:current_index]] = torch.max(gaussians.max_radii2D[visibility_filter[:current_index]], radii[:current_index][visibility_filter[:current_index]])
+                    gaussians.add_densification_stats_grad(grad[:current_index], visibility_filter[:current_index])
+                    last_index = current_index
+
+                    for iid in viewpoint_cam.dynamics.keys():
+                        dynamic_gaussian = scene.dynamic_gaussians[iid]
+                        current_index = last_index + dynamic_gaussian.get_xyz.shape[0]
+                        visible_mask = visibility_filter[last_index:current_index]
+                        dynamic_gaussian.max_radii2D[visible_mask] = torch.max(dynamic_gaussian.max_radii2D[visible_mask], radii[last_index:current_index][visible_mask])
+                        dynamic_gaussian.add_densification_stats_grad(grad[last_index:current_index], visible_mask)
+                        last_index = current_index
 
                     if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        print(f"Densifying with {gaussians.get_xyz.shape[0]} points")
                         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                        for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
+                            dynamic_gaussian.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                     
                     if iteration % opt.opacity_reset_interval == 0 or (
                         dataset.white_background and iteration == opt.densify_from_iter):
                         gaussians.reset_opacity()
+                        for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
+                            dynamic_gaussian.reset_opacity()
 
-            # Optimizer step
-            with record_function("optimization_step"):
-                if iteration < opt.iterations:
-                    gaussians.optimizer.step()
-                    gaussians.optimizer.zero_grad(set_to_none=True)
-                    
-                    # Update dynamic Gaussians
-                    for dynamic_gaussian in scene.dynamic_gaussians.values():
-                        if hasattr(dynamic_gaussian, 'optimizer'):
-                            dynamic_gaussian.optimizer.step()
-                            dynamic_gaussian.optimizer.zero_grad(set_to_none=True)
-                    
-                    # Update unicycle models
-                    for unicycle_pkg in scene.unicycles.values():
-                        unicycle_pkg['optimizer'].step()
-                        unicycle_pkg['optimizer'].zero_grad(set_to_none=True)
+
 
             if iteration in checkpoint_iterations:
                 print(f"\n[ITER {iteration}] Saving Checkpoint")
-                torch.save((gaussians.capture(), iteration), 
-                          scene.model_path + f"/ckpts/chkpnt{iteration}.pth")
+                save_path = scene.model_path + f"/ckpts/chkpnt{iteration}.pth"
+               
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                torch.save((gaussians.capture(), iteration), save_path)
                 
                 # Save dynamic Gaussians
                 for iid, dynamic_gaussian in scene.dynamic_gaussians.items():
-                    torch.save((dynamic_gaussian.capture(), iteration), 
-                              scene.model_path + f"/ckpts/dynamic_{iid}_chkpnt{iteration}.pth")
-                
+                    save_dynamic_path = scene.model_path + f"/ckpts/dynamic_{iid}_chkpnt{iteration}.pth"
+                    torch.save((dynamic_gaussian.capture(), iteration), save_dynamic_path)
+                if dataset.unicycle and opt.uc_opt_pos:
                 # Save unicycle models
-                for iid, unicycle_pkg in scene.unicycles.items():
-                    torch.save(unicycle_pkg['model'].capture(), 
-                              scene.model_path + f"/ckpts/unicycle_{iid}_chkpnt{iteration}.pth")
+                    for track_id, unicycle_pkg in scene.unicycles.items():
+                        model = unicycle_pkg['model']
+                        save_unicycle_path = scene.model_path + f"/ckpts/unicycle_{track_id}_chkpnt{iteration}.pth"
+                        torch.save(model.capture(), save_unicycle_path)
+                        model.visualize(os.path.join(scene.model_path, "unicycle", f"{track_id}_{iteration}.png"))
     
         # Step the profiler (important for the schedule to work)
         profiler.step()
@@ -315,7 +317,7 @@ if __name__ == "__main__":
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[100, 7_000, 30_000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     args = get_combined_args(parser)
     args.save_iterations.append(args.iterations)
@@ -329,7 +331,7 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), 
              args.test_iterations, args.save_iterations, args.checkpoint_iterations, 
-             args.start_checkpoint, args.debug_from, args.data_type, args.affine)
+             args.data_type, args.affine)
 
     # All done
     print("\nTraining complete.")
