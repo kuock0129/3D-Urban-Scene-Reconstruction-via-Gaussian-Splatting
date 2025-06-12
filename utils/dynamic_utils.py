@@ -115,7 +115,7 @@ class unicycle(torch.nn.Module):
             plt.scatter(gt_centers[:, 0], gt_centers[:, 1], marker='v', color='g')
         plt.axis('equal')
         plt.savefig(save_path)
-        plt.close()
+        # plt.show()
 
     def reg_loss(self):
         reg = 0
@@ -152,7 +152,7 @@ def create_unicycle_model(train_cams, model_path, opt_iter=0, data_type='kitti')
             all_centers[track_id].append(b2w[[0, 2], 3])
             all_heights[track_id].append(b2w[1, 3])
             eulers = rot2Euler(b2w[:3, :3])
-            all_phis[track_id].append(eulers[1]) # TODO
+            all_phis[track_id].append(eulers[1])
             all_timestamps[track_id].append(t)
 
     for track_id in all_centers.keys():
@@ -171,7 +171,7 @@ def create_unicycle_model(train_cams, model_path, opt_iter=0, data_type='kitti')
 
         optimizer = optim.Adam(l, lr=0.0)
 
-        t_range = tqdm(range(opt_iter), desc=f"Fitting {track_id}")
+        t_range = tqdm(range(opt_iter), desc=f"Init Fitting {track_id}")
         for iter in t_range:
             loss = 0.2 * model.pos_loss() + model.reg_loss()
             t_range.set_postfix({'loss': loss.item()})
@@ -193,4 +193,4 @@ def create_unicycle_model(train_cams, model_path, opt_iter=0, data_type='kitti')
                         )
                         # gt_centers=gt_centers)
 
-    return unicycle_models #have already trained
+    return unicycle_models

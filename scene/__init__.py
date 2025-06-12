@@ -28,17 +28,18 @@ class Scene:
     gaussians : GaussianModel
 
     def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, 
-                 unicycle=False, uc_fit_iter=0, resolution_scales=[1.0], data_type='kitti360', ignore_dynamic=False):
+                 resolution_scales=[1.0], data_type='kitti360', ignore_dynamic=False):
         """b
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
+        self.save_path = args.save_path
         self.loaded_iter = None
         self.gaussians = gaussians
 
         if load_iteration:
             if load_iteration == -1:
-                self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "ckpts"))
+                self.loaded_iter = searchForMaxIteration(self.save_path)
             else:
                 self.loaded_iter = load_iteration
             print("Loading trained model at iteration {}".format(self.loaded_iter))
@@ -63,8 +64,8 @@ class Scene:
         for track_id in scene_info.verts:
             self.dynamic_gaussians[track_id] = GaussianModel(args.sh_degree, feat_mutable=False)
         
-        if unicycle:
-            self.unicycles = create_unicycle_model(scene_info.train_cameras, self.model_path, uc_fit_iter, data_type)
+        if args.unicycle:
+            self.unicycles = create_unicycle_model(scene_info.train_cameras, self.model_path, args.uc_fit_iter, data_type)
         else:
             self.unicycles = {}
 
@@ -96,13 +97,13 @@ class Scene:
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
         if self.loaded_iter:
-            (model_params, first_iter) = torch.load(os.path.join(self.model_path, "ckpts", f"chkpnt{self.loaded_iter}.pth"))
+            (model_params, first_iter) = torch.load(os.path.join(self.save_path, f"chkpnt{self.loaded_iter}.pth"))
             gaussians.restore(model_params, None)
             for iid, dynamic_gaussian in self.dynamic_gaussians.items():
-                (model_params, first_iter) = torch.load(os.path.join(self.model_path, "ckpts", f"dynamic_{iid}_chkpnt{self.loaded_iter}.pth"))
+                (model_params, first_iter) = torch.load(os.path.join(self.save_path, f"dynamic_{iid}_chkpnt{self.loaded_iter}.pth"))
                 dynamic_gaussian.restore(model_params, None)
             for iid, unicycle_pkg in self.unicycles.items():
-                model_params = torch.load(os.path.join(self.model_path, "ckpts", f"unicycle_{iid}_chkpnt{self.loaded_iter}.pth"))
+                model_params = torch.load(os.path.join(self.save_path, f"unicycle_{iid}_chkpnt{self.loaded_iter}.pth"))
                 unicycle_pkg['model'].restore(model_params)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)

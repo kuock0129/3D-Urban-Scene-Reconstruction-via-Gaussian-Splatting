@@ -203,7 +203,7 @@ def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_
     #     feats3D = feats3D,
     #     delta = delta_uv)
     
-    rendered_image, radii = rasterizer(
+    rendered_image, radii= rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -234,12 +234,13 @@ def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
     render_depth = render_depth.mean(dim=0) 
-    render_depth = render_depth.detach().cpu().numpy()
+    # render_depth = render_depth.detach().cpu().numpy()
+
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": refined_image,
-            "depth": render_depth,
+            "render_depth": render_depth,
             "viewspace_points": means2D,
             "visibility_filter" : radii > 0,
             "radii": radii
