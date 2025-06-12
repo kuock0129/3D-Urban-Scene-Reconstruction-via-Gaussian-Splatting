@@ -231,6 +231,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # Print summary of top 20 operations by CUDA time
     print(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
+    # After profiler.stop(), add memory analysis
+    print("\n=== Memory Usage Analysis ===")
+    print(profiler.key_averages().table(
+        sort_by="cuda_memory_usage", 
+        row_limit=20,
+        header="Memory Usage by Operation"
+    ))
+
+    # Save memory timeline
+    profiler.export_memory_timeline(f"./log/memory_timeline_epoch_{PROFILE_EPOCH}.html", device="cuda:0")
+
 def prepare_output_and_logger(args):
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
