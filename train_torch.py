@@ -29,9 +29,9 @@ ProfilerActivity.CUDA, # For GPU operations
 ]
 # Configure profiling only for a specific epoch (e.g., the second epoch)
 PROFILE_EPOCH = 0 # 0-indexed epoch
-WARMUP_STEPS = 10 # Skip first few batches to avoid initialization overhead
+WARMUP_STEPS = 95 # Skip first few batches to avoid initialization overhead
 ACTIVE_STEPS = 10 # Number of steps to actively profile
-WAIT_STEPS = 5 # Additional steps to wait before warmup begins
+WAIT_STEPS = 500 # Additional steps to wait before warmup begins
 # Create profiler schedule
 prof_schedule = torch.profiler.schedule(
 wait=WAIT_STEPS, # Skip these steps before warmup
@@ -71,7 +71,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     profiler = torch.profiler.profile(
         activities=activities,
         schedule=prof_schedule,
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./log/profile_epoch_{PROFILE_EPOCH}'),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./log/original_profile/'),
         record_shapes=True,
         with_stack=True,
         profile_memory=True)
@@ -109,7 +109,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                             scene.unicycles, pipe, background)
             
             image, depth, viewspace_point_tensor, visibility_filter, radii = (
-                render_pkg["render"],  render_pkg["depth"], 
+                render_pkg["render"],  render_pkg["render_depth"], 
                 render_pkg["viewspace_points"], 
                 render_pkg["visibility_filter"], render_pkg["radii"]
             )
@@ -240,7 +240,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ))
 
     # Save memory timeline
-    profiler.export_memory_timeline(f"./log/memory_timeline_epoch_{PROFILE_EPOCH}.html", device="cuda:0")
+    # profiler.export_memory_timeline(f"./log/memory_timeline_epoch_{PROFILE_EPOCH}.html", device="cuda:0")
 
 def prepare_output_and_logger(args):
     if not args.model_path:

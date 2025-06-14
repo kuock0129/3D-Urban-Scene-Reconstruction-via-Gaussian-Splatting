@@ -93,7 +93,7 @@ class OptimizationParams(ParamGroup):
 
         #propagation parameters
         self.dataset = 'waymo'
-        self.propagation_interval = 100
+        self.propagation_interval = 500
         self.depth_error_min_threshold = 1.0
         self.depth_error_max_threshold = 1.0
         self.propagated_iteration_begin = 1000

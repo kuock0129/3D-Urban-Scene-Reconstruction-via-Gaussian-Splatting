@@ -76,7 +76,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         #propagate the gaussians first
         with torch.no_grad():
-           if iteration > opt.propagated_iteration_begin and iteration < opt.propagated_iteration_after and (iteration % opt.propagation_interval == 0 and not propagation_dict[viewpoint_cam.image_name]):
+           if iteration > opt.propagated_iteration_begin and iteration < opt.propagated_iteration_after and (iteration % opt.propagation_interval == 0):
             # if opt.depth_loss and iteration > propagated_iteration_begin and iteration < propagated_iteration_after and (iteration % opt.propagation_interval == 0):
                 propagation_dict[viewpoint_cam.image_name] = True
 
@@ -372,7 +372,7 @@ if __name__ == "__main__":
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[7_000, 15000, 25000, 30_000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     args = get_combined_args(parser)
     args.save_iterations.append(args.iterations)
