@@ -92,12 +92,12 @@ def render_set(model_path, name, iteration, views, scene, pipeline, background, 
             view, prev_view, scene.gaussians, scene.dynamic_gaussians, scene.unicycles, pipeline, background, True
         )
         rendering = render_pkg['render'].detach().cpu()
-        semantic = render_pkg['feats'].detach().cpu()
-        semantic = torch.argmax(semantic, dim=0)
-        semantic_rgb = colorize(semantic.detach().cpu().numpy())
-        depth = render_pkg['depth']
-        color_depth = color_depth_map(depth[0].detach().cpu().numpy())
-        color_depth[semantic == 10] = np.array([255.0, 255.0, 255.0])
+        # semantic = render_pkg['feats'].detach().cpu()
+        # semantic = torch.argmax(semantic, dim=0)
+        # semantic_rgb = colorize(semantic.detach().cpu().numpy())
+        depth = render_pkg['render_depth']
+        color_depth = color_depth_map(depth.detach().cpu().numpy())
+        # color_depth[semantic == 10] = np.array([255.0, 255.0, 255.0])
         gt = view.original_image[0:3, :, :]
         
         # _, ssim_map = ssim(rendering[None, ...], gt[None, ...], return_full_image=True)
@@ -116,36 +116,37 @@ def render_set(model_path, name, iteration, views, scene, pipeline, background, 
 
         torchvision.utils.save_image(rendering, os.path.join(render_path, view.image_name + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, view.image_name + ".png"))
-        semantic_rgb.save(os.path.join(semantic_path, view.image_name + ".png"))
+        # semantic_rgb.save(os.path.join(semantic_path, view.image_name + ".png"))
         imwrite(os.path.join(depth_path, view.image_name + ".png"), color_depth)
         
-        opticalflow = render_pkg["opticalflow"]
-        opticalflow = opticalflow.permute(1,2,0)
-        opticalflow = opticalflow[..., :2]
-        pytorch_optic_rgb = flow_vis_torch.flow_to_color(opticalflow.permute(2, 0, 1))  # (2, h, w)
-        torchvision.utils.save_image(pytorch_optic_rgb.float(), os.path.join(optical_path, view.image_name + ".png"), normalize=True)
+        # opticalflow = render_pkg["opticalflow"]
+        # opticalflow = opticalflow.permute(1,2,0)
+        # opticalflow = opticalflow[..., :2]
+        # pytorch_optic_rgb = flow_vis_torch.flow_to_color(opticalflow.permute(2, 0, 1))  # (2, h, w)
+        # torchvision.utils.save_image(pytorch_optic_rgb.float(), os.path.join(optical_path, view.image_name + ".png"), normalize=True)
         # torchvision.utils.save_image(error_map, os.path.join(error_path, '{0:05d}'.format(idx) + ".png"))
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, 
                 skip_train : bool, skip_test : bool, data_type, affine, ignore_dynamic):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, affine=affine)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, data_type=data_type, ignore_dynamic=ignore_dynamic)
 
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, data_type="waymo", ignore_dynamic=False)
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), scene, pipeline, background, data_type)
+            render_set(dataset.test_output_path, "train", scene.loaded_iter, scene.getTrainCameras(), scene, pipeline, background, data_type)
 
         if not skip_test:
-            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), scene, pipeline, background, data_type)
+            render_set(dataset.test_output_path, "test", scene.loaded_iter, scene.getTestCameras(), scene, pipeline, background, data_type)
 
 
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
-    model = ModelParams(parser, sentinel=True)
+    model = ModelParams(parser)
+
     pipeline = PipelineParams(parser)
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--data_type", default='kitti360', type=str)
@@ -156,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
-    args.source_path = os.path.join(args.model_path, 'data')
+    args.source_path = os.path.join(args.model_path, 'source_data')
 
     # Initialize system state (RNG)
     # safe_state(args.quiet)

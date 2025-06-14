@@ -12,7 +12,7 @@
 from argparse import ArgumentParser, Namespace
 import sys
 import os
-
+import time
 class GroupParams:
     pass
 
@@ -47,10 +47,13 @@ class ParamGroup:
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
-        self._source_path = ""
-        self._model_path = ""
-        self._images = "images"
+        self._source_path = "/home/shuo/research/reproduce/hugs/data/waymo/source_data"
+        self._model_path = "/home/shuo/research/reproduce/hugs/data/waymo"
+        self.save_path = "/home/shuo/research/reproduce/hugs/data/waymo/propagate_ckpts/"
+        self.test_output_path = "/home/shuo/research/reproduce/hugs/data/waymo/propagate_test_output/"
         self._resolution = -1
+        self.unicycle = True
+        self.uc_fit_iter = 0
         self._white_background = False
         self.data_device = "cpu"
         self.eval = False
@@ -86,6 +89,18 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+        self.uc_opt_pos = True
+
+        #propagation parameters
+        self.dataset = 'waymo'
+        self.propagation_interval = 500
+        self.depth_error_min_threshold = 1.0
+        self.depth_error_max_threshold = 1.0
+        self.propagated_iteration_begin = 1000
+        self.propagated_iteration_after = 12000
+        self.patch_size = 20
+        self.pair_path = ''
+
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

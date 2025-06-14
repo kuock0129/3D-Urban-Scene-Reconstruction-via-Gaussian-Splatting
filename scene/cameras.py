@@ -49,6 +49,11 @@ class Camera(nn.Module):
             print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
             self.data_device = torch.device("cuda")
 
+        fx,fy,cx,cy = K[0,0], K[1,1], K[0,2], K[1,2]
+        self.intrinsics = torch.tensor([[fx, 0, cx],
+                               [0, fy, cy],
+                               [0, 0, 1]]).to(self.data_device).to(torch.float32)
+        
         self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
         if semantic2d is not None:
             self.semantic2d = semantic2d.to(self.data_device)

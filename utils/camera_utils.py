@@ -41,12 +41,12 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)
 
-    if cam_info.semantic2d is not None:
-        semantic2d = torch.from_numpy(cam_info.semantic2d).long()[None, ...]
-    else:
-        semantic2d = None
+    # if cam_info.semantic2d is not None:
+    #     semantic2d = torch.from_numpy(cam_info.semantic2d).long()[None, ...]
+    # else:
+    #     semantic2d = None
 
-    optical_image = cam_info.optical_image
+    # optical_image = cam_info.optical_image
     mask = cam_info.mask
 
     gt_image = resized_image_rgb[:3, ...]
@@ -54,8 +54,12 @@ def loadCam(args, id, cam_info, resolution_scale):
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, K=cam_info.K,
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
                   image=gt_image, image_name=cam_info.image_name, uid=id, data_device=args.data_device,
-                  cx_ratio=cam_info.cx_ratio, cy_ratio=cam_info.cy_ratio, semantic2d=semantic2d, mask=mask,
-                  timestamp=cam_info.timestamp, optical_image=optical_image, dynamics=cam_info.dynamics)
+                  cx_ratio=cam_info.cx_ratio, cy_ratio=cam_info.cy_ratio, 
+                #   semantic2d=semantic2d, 
+                  mask=mask,
+                  timestamp=cam_info.timestamp, 
+                #   optical_image=optical_image, 
+                  dynamics=cam_info.dynamics)
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):
     camera_list = []

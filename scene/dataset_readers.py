@@ -40,8 +40,8 @@ class CameraInfo(NamedTuple):
     height: int
     cx_ratio: float
     cy_ratio: float
-    semantic2d: np.array
-    optical_image: np.array
+    # semantic2d: np.array
+    # optical_image: np.array
     mask: np.array
     timestamp: int
     dynamics: dict
@@ -135,17 +135,17 @@ def readStudioCameras(path, white_background, data_type, ignore_dynamic):
             image_name = '_'.join([rgb_split[-2], rgb_split[-1][:-4]])
             image = Image.open(rgb_path)
 
-            semantic_2d = None
-            semantic_pth = rgb_path.replace("images", "semantics").replace('.png', '.npy').replace('.jpg', '.npy')
-            if os.path.exists(semantic_pth):
-                semantic_2d = np.load(semantic_pth)
-                semantic_2d[(semantic_2d == 14) | (semantic_2d == 15)] = 13
+            # semantic_2d = None
+            # semantic_pth = rgb_path.replace("images", "semantics").replace('.png', '.npy').replace('.jpg', '.npy')
+            # if os.path.exists(semantic_pth):
+            #     semantic_2d = np.load(semantic_pth)
+            #     semantic_2d[(semantic_2d == 14) | (semantic_2d == 15)] = 13
 
-            optical_path = rgb_path.replace("images", "flow").replace('.png', '_flow.npy').replace('.jpg', '_flow.npy')
-            if os.path.exists(optical_path):
-                optical_image = np.load(optical_path)
-            else:
-                optical_image = None
+            # optical_path = rgb_path.replace("images", "flow").replace('.png', '_flow.npy').replace('.jpg', '_flow.npy')
+            # if os.path.exists(optical_path):
+            #     optical_image = np.load(optical_path)
+            # else:
+            #     optical_image = None
 
             mask = None
             mask_path = rgb_path.replace("images", "masks").replace('.png', '.npy').replace('.jpg', '.npy')
@@ -168,8 +168,10 @@ def readStudioCameras(path, white_background, data_type, ignore_dynamic):
                 
             cam_info = CameraInfo(uid=idx, R=R, T=T, K=intrinsic, FovY=FovY, FovX=FovX, image=image,
                                 image_path=rgb_path, image_name=image_name, width=image.size[0],
-                                height=image.size[1], cx_ratio=2*cx/w, cy_ratio=2*cy/h, semantic2d=semantic_2d, 
-                                optical_image=optical_image, mask=mask, timestamp=timestamp, dynamics=dynamics)
+                                height=image.size[1], cx_ratio=2*cx/w, cy_ratio=2*cy/h, 
+                                # semantic2d=semantic_2d, 
+                                # optical_image=optical_image, 
+                                mask=mask, timestamp=timestamp, dynamics=dynamics)
             
             # kitti360
             if data_type == 'kitti360':
@@ -251,7 +253,12 @@ def readStudioInfo(path, white_background, eval, data_type, ignore_dynamic):
     except Exception as e:
         print('When loading point clound, meet error:', e)
         exit(0)
-
+    # if len(pcd[0]) > 1000:
+    #     indices = np.random.choice(len(pcd[0]), 1000, replace=False)
+    #     points = pcd[0][indices]
+    #     colors = pcd[1][indices]
+    #     normals = pcd[2][indices]
+    #     pcd = BasicPointCloud(points=points, colors=colors, normals=normals)
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,

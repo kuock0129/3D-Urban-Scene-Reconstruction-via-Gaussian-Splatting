@@ -95,7 +95,7 @@ class GaussianModel:
         self._xyz = torch.empty(0)
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
-        self._feats3D = torch.empty(0)
+        # self._feats3D = torch.empty(0)
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
@@ -142,7 +142,7 @@ class GaussianModel:
             self._xyz,
             self._features_dc,
             self._features_rest,
-            self._feats3D,
+            # self._feats3D,
             self._scaling,
             self._rotation,
             self._opacity,
@@ -159,7 +159,7 @@ class GaussianModel:
         self._xyz, 
         self._features_dc, 
         self._features_rest,
-        self._feats3D,
+        # self._feats3D,
         self._scaling, 
         self._rotation, 
         self._opacity,
@@ -194,9 +194,9 @@ class GaussianModel:
         features_rest = self._features_rest
         return torch.cat((features_dc, features_rest), dim=1)
     
-    @property
-    def get_3D_features(self):
-        return torch.softmax(self._feats3D, dim=-1)
+    # @property
+    # def get_3D_features(self):
+    #     return torch.softmax(self._feats3D, dim=-1)
     
     @property
     def get_opacity(self):
@@ -218,13 +218,13 @@ class GaussianModel:
         features[:, :3, 0 ] = fused_color
         features[:, 3:, 1:] = 0.0
 
-        if self.feat_mutable:
-            feats3D = torch.zeros(fused_color.shape[0], 20).float().cuda()
-            self._feats3D = nn.Parameter(feats3D.requires_grad_(True))
-        else:
-            feats3D = torch.zeros(fused_color.shape[0], 20).float().cuda()
-            feats3D[:, 13] = 1
-            self._feats3D = nn.Parameter(feats3D.requires_grad_(True))
+        # if self.feat_mutable:
+        #     feats3D = torch.zeros(fused_color.shape[0], 20).float().cuda()
+        #     self._feats3D = nn.Parameter(feats3D.requires_grad_(True))
+        # else:
+        #     feats3D = torch.zeros(fused_color.shape[0], 20).float().cuda()
+        #     feats3D[:, 13] = 1
+        #     self._feats3D = nn.Parameter(feats3D.requires_grad_(True))
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
@@ -262,8 +262,8 @@ class GaussianModel:
         if self.affine:
             l.append({'params': [*self.appearance_model.parameters()], 'lr': 1e-3, "name": "appearance_model"})
         
-        if self.feat_mutable:
-            l.append({'params': [self._feats3D], 'lr': 1e-2, "name": "feats3D"})
+        # if self.feat_mutable:
+        #     l.append({'params': [self._feats3D], 'lr': 1e-2, "name": "feats3D"})
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         # self.optimizer = CustomAdam(l, lr=0.0, eps=1e-15)
@@ -287,8 +287,8 @@ class GaussianModel:
             l.append('f_dc_{}'.format(i))
         for i in range(self._features_rest.shape[1]*self._features_rest.shape[2]):
             l.append('f_rest_{}'.format(i))
-        for i in range(self._feats3D.shape[1]):
-            l.append('semantic_{}'.format(i))
+        # for i in range(self._feats3D.shape[1]):
+        #     l.append('semantic_{}'.format(i))
         l.append('opacity')
         for i in range(self._scaling.shape[1]):
             l.append('scale_{}'.format(i))
@@ -303,7 +303,7 @@ class GaussianModel:
         normals = np.zeros_like(xyz)
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        feats3D = self._feats3D.detach().cpu().numpy()
+        # feats3D = self._feats3D.detach().cpu().numpy()
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
@@ -311,7 +311,7 @@ class GaussianModel:
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, feats3D, opacities, scale, rotation), axis=1)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
@@ -412,10 +412,10 @@ class GaussianModel:
         self._xyz = optimizable_tensors["xyz"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
-        if self.feat_mutable:
-            self._feats3D = optimizable_tensors["feats3D"]
-        else:
-            self._feats3D = self._feats3D[1, :].repeat((self._xyz.shape[0], 1))
+        # if self.feat_mutable:
+        #     self._feats3D = optimizable_tensors["feats3D"]
+        # else:
+        #     self._feats3D = self._feats3D[1, :].repeat((self._xyz.shape[0], 1))
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
@@ -449,11 +449,12 @@ class GaussianModel:
 
         return optimizable_tensors
 
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_feats3D, new_opacities, new_scaling, new_rotation):
+    # def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_feats3D, new_opacities, new_scaling, new_rotation):
+    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation):
         d = {"xyz": new_xyz,
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,
-        "feats3D": new_feats3D,
+        # "feats3D": new_feats3D,
         "opacity": new_opacities,
         "scaling" : new_scaling,
         "rotation" : new_rotation}
@@ -461,10 +462,10 @@ class GaussianModel:
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
         self._features_dc = optimizable_tensors["f_dc"]
-        if self.feat_mutable:
-            self._feats3D = optimizable_tensors["feats3D"]
-        else:
-            self._feats3D = self._feats3D[1, :].repeat((self._xyz.shape[0], 1))
+        # if self.feat_mutable:
+        #     self._feats3D = optimizable_tensors["feats3D"]
+        # else:
+        #     self._feats3D = self._feats3D[1, :].repeat((self._xyz.shape[0], 1))
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
@@ -492,10 +493,10 @@ class GaussianModel:
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
-        new_feats3D = self._feats3D[selected_pts_mask].repeat(N,1)
+        # new_feats3D = self._feats3D[selected_pts_mask].repeat(N,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
-
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_feats3D, new_opacity, new_scaling, new_rotation)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+        # self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_feats3D, new_opacity, new_scaling, new_rotation)
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
@@ -509,12 +510,12 @@ class GaussianModel:
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
-        new_feats3D = self._feats3D[selected_pts_mask]
+        # new_feats3D = self._feats3D[selected_pts_mask]
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
-
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_feats3D, new_opacities, new_scaling, new_rotation)
+        # self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_feats3D, new_opacities, new_scaling, new_rotation)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
@@ -539,3 +540,73 @@ class GaussianModel:
     def add_densification_stats_grad(self, tensor_grad, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(tensor_grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
+
+
+    def densify_from_depth_propagation(self, viewpoint_cam, propagated_depth, filter_mask, gt_image):
+        # inverse project pixels into 3D scenes
+        K = viewpoint_cam.intrinsics.cuda()
+        cam2world = viewpoint_cam.world_view_transform.transpose(0, 1).inverse()
+
+        # Get the shape of the depth image
+        height, width = propagated_depth.shape
+        # Create a grid of 2D pixel coordinates
+        y, x = torch.meshgrid(torch.arange(0, height), torch.arange(0, width))
+        # Stack the 2D and depth coordinates to create 3D homogeneous coordinates
+        coordinates = torch.stack([x.to(propagated_depth.device), y.to(propagated_depth.device), torch.ones_like(propagated_depth)], dim=-1)
+        # Reshape the coordinates to (height * width, 3)
+        coordinates = coordinates.view(-1, 3).to(K.device).to(torch.float32)
+        # Reproject the 2D coordinates to 3D coordinates
+        coordinates_3D = (K.inverse() @ coordinates.T).T
+
+        # Multiply by depth
+        coordinates_3D *= propagated_depth.view(-1, 1)
+
+        # convert to the world coordinate
+        world_coordinates_3D = (cam2world[:3, :3] @ coordinates_3D.T).T + cam2world[:3, 3]
+
+        # import open3d as o3d
+        # point_cloud = o3d.geometry.PointCloud()
+        # point_cloud.points = o3d.utility.Vector3dVector(world_coordinates_3D.detach().cpu().numpy())
+        # o3d.io.write_point_cloud("partpc.ply", point_cloud)
+        # exit()
+
+        #mask the points below the confidence threshold
+        #downsample the pixels; 1/4
+        world_coordinates_3D = world_coordinates_3D.view(height, width, 3)
+        world_coordinates_3D_downsampled = world_coordinates_3D[::8, ::8]
+        filter_mask_downsampled = filter_mask[::8, ::8]
+        gt_image_downsampled = gt_image.permute(1, 2, 0)[::8, ::8]
+
+        world_coordinates_3D_downsampled = world_coordinates_3D_downsampled[filter_mask_downsampled]
+        color_downsampled = gt_image_downsampled[filter_mask_downsampled]
+
+        # initialize gaussians
+        fused_point_cloud = world_coordinates_3D_downsampled
+        fused_color = RGB2SH(color_downsampled)
+        features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).to(fused_color.device)
+        features[:, :3, 0 ] = fused_color
+        features[:, 3:, 1:] = 0.0
+
+        original_point_cloud = self.get_xyz
+        # initialize the scale from the mode, if using the distance to calculate, there are outliers, if using the whole gaussians, it is memory consuming
+        # quantile_scale = torch.quantile(self.get_scaling, 0.5, dim=0)
+        # scales = self.scaling_inverse_activation(quantile_scale.unsqueeze(0).repeat(fused_point_cloud.shape[0], 1))
+        fused_shape = fused_point_cloud.shape[0]
+        all_point_cloud = torch.concat([fused_point_cloud, original_point_cloud], dim=0)
+        all_dist2 = torch.clamp_min(distCUDA2(all_point_cloud), 0.0000001)
+        dist2 = all_dist2[:fused_shape]        
+        scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
+        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
+        # rots[:, 0] = 1
+
+        opacities = inverse_sigmoid(1.0 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+
+        new_xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+        new_features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
+        new_features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
+        new_scaling = nn.Parameter(scales.requires_grad_(True))
+        new_rotation = nn.Parameter(rots.requires_grad_(True))
+        new_opacity = nn.Parameter(opacities.requires_grad_(True))
+
+        #update gaussians
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)

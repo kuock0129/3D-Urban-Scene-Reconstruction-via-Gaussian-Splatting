@@ -11,10 +11,19 @@
 
 import torch
 import math
+import numpy as np
+# from hugs_diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh, RGB2SH
 from pytorch3d.transforms import quaternion_to_matrix, matrix_to_quaternion
+  
+def getWorld2View(R, t):
+    Rt = np.zeros((4, 4))
+    Rt[:3, :3] = R.transpose()  # 注意这里是 R 的转置
+    Rt[:3, 3] = t
+    Rt[3, 3] = 1.0
+    return np.float32(Rt)
 
 def euler2matrix(yaw):
     cos = torch.cos(-yaw)
@@ -30,7 +39,7 @@ def cat_bgfg(bg, fg, only_dynamic=False, only_xyz=False):
     if only_xyz:
         bg_feats = [bg.get_xyz]
     else:
-        bg_feats = [bg.get_xyz, bg.get_opacity, bg.get_scaling, bg.get_rotation, bg.get_features, bg.get_3D_features]
+        bg_feats = [bg.get_xyz, bg.get_opacity, bg.get_scaling, bg.get_rotation, bg.get_features]
     
     output = []
     for fg_feat, bg_feat in zip(fg, bg_feats):
@@ -80,7 +89,7 @@ def unicycle_b2w(timestamp, model):
 
 def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_gaussians : dict, 
                         unicycles : dict, pipe, bg_color : torch.Tensor, 
-                        render_optical=False, scaling_modifier = 1.0, only_dynamic=False):
+                        scaling_modifier = 1.0, only_dynamic=False):
     """
     Render the scene. 
     
@@ -113,28 +122,29 @@ def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_
                    dynamic_gaussians[track_id].get_scaling, 
                    w_drot,
                    dynamic_gaussians[track_id].get_features,
-                   dynamic_gaussians[track_id].get_3D_features]
+                #    dynamic_gaussians[track_id].get_3D_features
+                   ]
         # next_fg = get_next_fg(dynamic_gaussians[track_id], B2W)
         # w_dxyz = next_fg[0]
         all_fg = cat_all_fg(all_fg, next_fg)
 
-        if render_optical and prev_viewpoint_camera is not None:
-            if track_id in prev_track_dict:
-                prev_B2W = prev_track_dict[track_id]
-                prev_w_dxyz = torch.mm(prev_B2W[:3, :3], dynamic_gaussians[track_id].get_xyz.T).T + prev_B2W[:3, 3]
-                prev_all_fg = cat_all_fg(prev_all_fg, [prev_w_dxyz])
-            else:
-                prev_all_fg = cat_all_fg(prev_all_fg, [w_dxyz])
+        # if render_optical and prev_viewpoint_camera is not None:
+        #     if track_id in prev_track_dict:
+        #         prev_B2W = prev_track_dict[track_id]
+        #         prev_w_dxyz = torch.mm(prev_B2W[:3, :3], dynamic_gaussians[track_id].get_xyz.T).T + prev_B2W[:3, 3]
+        #         prev_all_fg = cat_all_fg(prev_all_fg, [prev_w_dxyz])
+        #     else:
+        #         prev_all_fg = cat_all_fg(prev_all_fg, [w_dxyz])
             
-    xyz, opacity, scales, rotations, shs, feats3D = cat_bgfg(pc, all_fg)
-    if render_optical and prev_viewpoint_camera is not None:
-        prev_xyz = cat_bgfg(pc, prev_all_fg, only_xyz=True)[0]
-        uv = proj_uv(xyz, viewpoint_camera)
-        prev_uv = proj_uv(prev_xyz, prev_viewpoint_camera)
-        delta_uv = uv - prev_uv
-        delta_uv = torch.cat([delta_uv, torch.ones_like(delta_uv[:, :1], device=delta_uv.device)], dim=-1)
-    else:
-        delta_uv = torch.zeros_like(xyz)
+    xyz, opacity, scales, rotations, shs = cat_bgfg(pc, all_fg)
+    # if render_optical and prev_viewpoint_camera is not None:
+    #     prev_xyz = cat_bgfg(pc, prev_all_fg, only_xyz=True)[0]
+    #     uv = proj_uv(xyz, viewpoint_camera)
+    #     prev_uv = proj_uv(prev_xyz, prev_viewpoint_camera)
+    #     delta_uv = uv - prev_uv
+    #     delta_uv = torch.cat([delta_uv, torch.ones_like(delta_uv[:, :1], device=delta_uv.device)], dim=-1)
+    # else:
+    delta_uv = torch.zeros_like(xyz)
 
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(xyz, dtype=xyz.dtype, requires_grad=True, device="cuda") + 0
@@ -181,7 +191,19 @@ def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_
     colors_precomp = None
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii, feats, depth, flow = rasterizer(
+    # rendered_image, radii, feats, depth, flow = rasterizer(
+    #     means3D = means3D,
+    #     means2D = means2D,
+    #     shs = shs,
+    #     colors_precomp = colors_precomp,
+    #     opacities = opacity,
+    #     scales = scales,
+    #     rotations = rotations,
+    #     cov3D_precomp = cov3D_precomp,
+    #     feats3D = feats3D,
+    #     delta = delta_uv)
+    
+    rendered_image, radii= rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -189,9 +211,7 @@ def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_
         opacities = opacity,
         scales = scales,
         rotations = rotations,
-        cov3D_precomp = cov3D_precomp,
-        feats3D = feats3D,
-        delta = delta_uv)
+        cov3D_precomp = cov3D_precomp)
     
     if pc.affine:
         colors = rendered_image.view(3, -1).permute(1, 0) # (H*W, 3)
@@ -199,12 +219,29 @@ def render(viewpoint_camera, prev_viewpoint_camera, pc : GaussianModel, dynamic_
     else:
         refined_image = rendered_image
 
+
+    projvect1 = viewpoint_camera.world_view_transform[:,2][:3].detach()
+    projvect2 = viewpoint_camera.world_view_transform[:,2][-1].detach()
+    means3D_depth = (means3D * projvect1.unsqueeze(0)).sum(dim=-1,keepdim=True) + projvect2
+    means3D_depth = means3D_depth.repeat(1,3)
+    render_depth, _ = rasterizer(
+        means3D = means3D,
+        means2D = means2D,
+        shs = None,
+        colors_precomp = means3D_depth,
+        opacities = opacity,
+        scales = scales,
+        rotations = rotations,
+        cov3D_precomp = cov3D_precomp)
+    render_depth = render_depth.mean(dim=0) 
+    # render_depth = render_depth.detach().cpu().numpy()
+
+
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": refined_image,
-            "feats": feats,
-            "depth": depth,
-            "opticalflow": flow,
-            "viewspace_points": screenspace_points,
+            "render_depth": render_depth,
+            "viewspace_points": means2D,
             "visibility_filter" : radii > 0,
-            "radii": radii}
+            "radii": radii
+            }

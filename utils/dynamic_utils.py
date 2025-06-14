@@ -115,7 +115,7 @@ class unicycle(torch.nn.Module):
             plt.scatter(gt_centers[:, 0], gt_centers[:, 1], marker='v', color='g')
         plt.axis('equal')
         plt.savefig(save_path)
-        plt.close()
+        # plt.show()
 
     def reg_loss(self):
         reg = 0
@@ -171,7 +171,7 @@ def create_unicycle_model(train_cams, model_path, opt_iter=0, data_type='kitti')
 
         optimizer = optim.Adam(l, lr=0.0)
 
-        t_range = tqdm(range(opt_iter), desc=f"Fitting {track_id}")
+        t_range = tqdm(range(opt_iter), desc=f"Init Fitting {track_id}")
         for iter in t_range:
             loss = 0.2 * model.pos_loss() + model.reg_loss()
             t_range.set_postfix({'loss': loss.item()})
